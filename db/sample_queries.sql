@@ -1,52 +1,132 @@
-WITH defect_stats AS (
-    SELECT 
-        d.defect_code,
-        COUNT(DISTINCT ir.lot_id) AS num_lots,
-        COUNT(DISTINCT DATE_TRUNC('week', ir.inspection_date)) AS num_weeks,
-        MIN(ir.inspection_date) AS first_seen,
-        MAX(ir.inspection_date) AS last_seen,
-        SUM(ir.qty_defects) AS total_qty,
-        BOOL_AND(ir.is_data_complete) AS data_is_complete
-    FROM inspection_records ir
-    JOIN defects d ON ir.defect_id = d.id
-    WHERE ir.qty_defects > 0  -- AC3: Ignore zero-defect records
-    GROUP BY d.defect_code
-)
-SELECT 
-    defect_code,
-    CASE 
-        WHEN data_is_complete = FALSE THEN 'Insufficient data' -- AC4
-        WHEN num_weeks > 1 AND num_lots > 1 THEN 'Recurring'    -- AC1
-        ELSE 'Not recurring'                                   -- AC2
-    END AS status,
-    num_weeks,
-    num_lots,
-    first_seen,
-    last_seen,
-    total_qty
-FROM defect_stats
-ORDER BY 
-    -- AC9: Default sorting logic
-    (CASE 
-        WHEN (num_weeks > 1 AND num_lots > 1 AND data_is_complete = TRUE) THEN 1 
-        WHEN data_is_complete = FALSE THEN 2 
-        ELSE 3 
-     END) ASC,
-    num_weeks DESC, 
-    num_lots DESC;
+-- db/sample_queries.sql
+-- Sample queries for Operations analytics (PostgreSQL)
 
+-- =========================================================
+-- Q1) Filter production by date range (AC1)
+-- =========================================================
+SELECT
+    pr.date,
+    pl.line,
+    pr.shift,
+    l.lot,
+    pr.part_number,
+    pr.units_planned,
+    pr.units_actual,
+    pr.downtime_min,
+    pr.line_issue,
+    pr.primary_issue
+FROM production_records pr
+JOIN lots l ON l.id = pr.lot_id
+JOIN production_lines pl ON pl.id = pr.production_line_id
+WHERE pr.date BETWEEN DATE '2026-01-01' AND DATE '2026-01-31'
+ORDER BY pr.date, pl.line, l.lot;
 
+-- =========================================================
+-- Q2) Filter production by production line (AC2)
+-- =========================================================
+SELECT
+    pr.date,
+    pl.line,
+    l.lot,
+    pr.part_number,
+    pr.units_actual,
+    pr.downtime_min
+FROM production_records pr
+JOIN lots l ON l.id = pr.lot_id
+JOIN production_lines pl ON pl.id = pr.production_line_id
+WHERE pl.line = 'Line A'
+ORDER BY pr.date, l.lot;
 
-
-SELECT 
-    DATE_TRUNC('week', ir.inspection_date) AS week_starting,
-    COUNT(DISTINCT l.lot_id) AS lots_in_week,
-    SUM(ir.qty_defects) AS total_qty_this_week,
-    STRING_AGG(DISTINCT l.lot_id, ', ') AS lot_list
+-- =========================================================
+-- Q3) Which production lines had the most issues? (AC3)
+-- Using inspection_records as "issues" when qty_defects > 0
+-- =========================================================
+SELECT
+    pl.line,
+    SUM(ir.qty_defects) AS total_defects,
+    COUNT(*) FILTER (WHERE ir.qty_defects > 0) AS defect_rows
 FROM inspection_records ir
-JOIN defects d ON ir.defect_id = d.id
-JOIN lots l ON ir.lot_id = l.id
-WHERE d.defect_code = 'DEF-001' -- Example input
+JOIN production_lines pl ON pl.id = ir.production_line_id
+WHERE ir.inspection_date BETWEEN DATE '2026-01-01' AND DATE '2026-01-31'
+GROUP BY pl.line
+ORDER BY total_defects DESC, defect_rows DESC;
+
+-- =========================================================
+-- Q4) Trending defect types by week (AC4)
+-- (Postgres date_trunc('week', ...) gives week buckets
+-- =========================================================
+SELECT
+    date_trunc('week', ir.inspection_date)::date AS week_start,
+    d.defect_code,
+    SUM(ir.qty_defects) AS total_defects
+FROM inspection_records ir
+JOIN defects d ON d.id = ir.defect_id
+WHERE ir.inspection_date BETWEEN DATE '2026-01-01' AND DATE '2026-03-31'
   AND ir.qty_defects > 0
-GROUP BY week_starting
-ORDER BY week_starting DESC;
+GROUP BY week_start, d.defect_code
+ORDER BY week_start, total_defects DESC;
+
+-- =========================================================
+-- Q5) Has a lot shipped? (AC5)
+-- If any record exists in shipping_records, it has shipped/has a status.
+-- =========================================================
+SELECT
+    l.lot,
+    sr.ship_status,
+    sr.ship_date,
+    sr.customer,
+    sr.bol_no,
+    sr.qty_shipped
+FROM lots l
+LEFT JOIN shipping_records sr ON sr.lot_id = l.id
+WHERE l.lot = 'LOT-10025'
+ORDER BY sr.ship_date DESC;
+
+-- =========================================================
+-- Q6) For a given lot, show production + shipping together (useful ops view)
+-- =========================================================
+SELECT
+    l.lot,
+    MIN(pr.date) AS first_production_date,
+    MAX(pr.date) AS last_production_date,
+    pl.line,
+    SUM(pr.units_actual) AS total_units_actual,
+    MAX(sr.ship_date) AS ship_date,
+    MAX(sr.ship_status) AS ship_status
+FROM lots l
+JOIN production_records pr ON pr.lot_id = l.id
+JOIN production_lines pl ON pl.id = pr.production_line_id
+LEFT JOIN shipping_records sr ON sr.lot_id = l.id
+WHERE l.lot = 'LOT-10025'
+GROUP BY l.lot, pl.line;
+
+-- =========================================================
+-- Q7) Find lots with defects that have already shipped (ops question)
+-- =========================================================
+SELECT
+    l.lot,
+    pl.line,
+    SUM(ir.qty_defects) AS total_defects,
+    MAX(sr.ship_date) AS ship_date,
+    MAX(sr.ship_status) AS ship_status
+FROM inspection_records ir
+JOIN lots l ON l.id = ir.lot_id
+JOIN production_lines pl ON pl.id = ir.production_line_id
+LEFT JOIN shipping_records sr ON sr.lot_id = l.id
+WHERE ir.qty_defects > 0
+GROUP BY l.lot, pl.line
+HAVING MAX(sr.ship_date) IS NOT NULL
+ORDER BY total_defects DESC;
+
+-- =========================================================
+-- Q8) Line downtime summary by week (ops reporting)
+-- =========================================================
+SELECT
+    date_trunc('week', pr.date)::date AS week_start,
+    pl.line,
+    SUM(pr.downtime_min) AS total_downtime_min
+FROM production_records pr
+JOIN production_lines pl ON pl.id = pr.production_line_id
+WHERE pr.date BETWEEN DATE '2026-01-01' AND DATE '2026-03-31'
+GROUP BY week_start, pl.line
+ORDER BY week_start, total_downtime_min DESC;
