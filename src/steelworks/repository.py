@@ -7,6 +7,7 @@ tests can assert the stub exists without performing real I/O.
 """
 
 from typing import List, Optional
+from datetime import date
 
 from .models import ProductionRecord, InspectionRecord, ShippingRecord
 
@@ -21,9 +22,9 @@ class Repository:
 
     def get_production_records(
         self,
-        start_date=None,
-        end_date=None,
-        production_line=None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        production_line: Optional[str] = None,
     ) -> List[ProductionRecord]:
         """Return productions within the given constraints.
 
@@ -35,9 +36,9 @@ class Repository:
 
     def get_inspection_records(
         self,
-        start_date=None,
-        end_date=None,
-        production_line=None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        production_line: Optional[str] = None,
     ) -> List[InspectionRecord]:
         """Return inspection events subject to the same filters."""
         raise NotImplementedError

@@ -7,7 +7,7 @@ error.
 """
 
 
-def init_db():
+def init_db() -> None:
     """Create database connections and prepare schema.
 
     Raises NotImplementedError to remind developers that the real logic must
