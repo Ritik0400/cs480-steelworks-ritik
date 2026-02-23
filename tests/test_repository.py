@@ -11,8 +11,7 @@ import pytest
 from steelworks.repository import Repository
 
 
-@ pytest.fixture
-
+@pytest.fixture
 def repo():
     return Repository()
 

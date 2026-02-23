@@ -22,6 +22,7 @@ class ProductionRecord:
     * produced_at: date of production (used in AC1 date filtering)
     * quantity: number of items produced
     """
+
     id: int
     lot_id: str
     production_line: str
@@ -36,6 +37,7 @@ class InspectionRecord:
     The user story refers to defect codes and quantities, so those fields are
     included as optionals.  Fields again mirror the spreadsheet layout.
     """
+
     id: int
     lot_id: str
     inspection_date: date
@@ -50,6 +52,7 @@ class ShippingRecord:
 
     AC5 asks whether a lot has shipped; this record holds the status/date.
     """
+
     id: int
     lot_id: str
     shipped_at: Optional[date]

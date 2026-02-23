@@ -11,8 +11,7 @@ from steelworks.services import OperationsService
 from steelworks.repository import Repository
 
 
-@ pytest.fixture
-
+@pytest.fixture
 def service():
     # injecting a plain Repository; real tests may use a mock or fake later
     return OperationsService(repository=Repository())

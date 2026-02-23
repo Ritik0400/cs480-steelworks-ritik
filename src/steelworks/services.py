@@ -23,9 +23,7 @@ class OperationsService:
         # repository is injected to allow easy mocking in tests
         self.repository = repository
 
-    def summarize_issues_by_line(
-        self, start_date=None, end_date=None
-    ) -> List[Any]:
+    def summarize_issues_by_line(self, start_date=None, end_date=None) -> List[Any]:
         """AC3: return lines sorted by total defects in a date range.
 
         The exact return type is a list of tuples or dictionaries; details are

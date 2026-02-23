@@ -39,8 +39,7 @@ class Repository:
         end_date=None,
         production_line=None,
     ) -> List[InspectionRecord]:
-        """Return inspection events subject to the same filters.
-        """
+        """Return inspection events subject to the same filters."""
         raise NotImplementedError
 
     def get_shipping_record_for_lot(self, lot_id: str) -> Optional[ShippingRecord]:
