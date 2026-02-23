@@ -1,15 +1,25 @@
--- Ops-only seed generated from Ops_Production_Log.xlsx and Ops_Shipping_Log.xlsx
--- Safe to run multiple times: truncates transactional tables; upserts master data
+-- SteelWorks Operations Seed Data
+-- Populates production, inspection, and shipping records for operations analytics.
+-- Loads Ops data from Excel (Production & Shipping) + synthesized inspection records
+-- Safe to run multiple times: truncates transactional tables and re-populates.
 
 BEGIN;
 
--- If a previous run failed, you may need to ROLLBACK before running this script in pgAdmin.
+-- ===========================
+-- PART 1: CLEAN UP (Idempotent)
+-- ===========================
+-- Truncate in dependency order to avoid foreign key violations
+TRUNCATE TABLE inspection_records RESTART IDENTITY CASCADE;
+TRUNCATE TABLE shipping_records RESTART IDENTITY CASCADE;
+TRUNCATE TABLE production_records RESTART IDENTITY CASCADE;
+TRUNCATE TABLE defects RESTART IDENTITY CASCADE;
+TRUNCATE TABLE production_lines RESTART IDENTITY CASCADE;
+TRUNCATE TABLE lots RESTART IDENTITY CASCADE;
 
--- Reset transactional tables
-TRUNCATE TABLE shipping_records RESTART IDENTITY;
-TRUNCATE TABLE production_records RESTART IDENTITY;
-
--- Master data: lots
+-- ===========================
+-- PART 2: MASTER DATA (Lots)
+-- ===========================
+-- All lots referenced across production, inspection, and shipping.
 INSERT INTO lots (lot) VALUES
 ('LOT-20251215-001'),
 ('LOT-20251215-002'),
@@ -98,7 +108,9 @@ INSERT INTO lots (lot) VALUES
 ('LOT-20260124-003')
 ON CONFLICT (lot) DO NOTHING;
 
--- Master data: production lines
+-- ===========================
+-- PART 3: PRODUCTION LINES
+-- ===========================
 INSERT INTO production_lines (line) VALUES
 ('Line 1'),
 ('Line 2'),
@@ -106,7 +118,26 @@ INSERT INTO production_lines (line) VALUES
 ('Line 4')
 ON CONFLICT (line) DO NOTHING;
 
--- Production records
+-- ===========================
+-- PART 4: DEFECT CODES
+-- ===========================
+-- Common manufacturing defect types for quality reporting
+INSERT INTO defects (defect_code) VALUES
+('SURFACE_SCRATCH'),
+('DIMENSIONAL_OOS'),
+('MATERIAL_DEFECT'),
+('PAINT_DEFECT'),
+('ASSEMBLY_ERROR'),
+('CORROSION'),
+('DENT'),
+('MISALIGNMENT')
+ON CONFLICT (defect_code) DO NOTHING;
+
+-- ===========================
+-- PART 5: PRODUCTION RECORDS
+-- ===========================
+-- Represents production runs on each line. Data spans Dec 2025 - Jan 2026.
+-- Loaded from Ops_Production_Log.xlsx
 INSERT INTO production_records (
   lot_id, production_line_id, date, shift, part_number,
   units_planned, units_actual, downtime_min, line_issue, primary_issue, supervisor_notes
@@ -203,7 +234,54 @@ INSERT INTO production_records (
 ((SELECT id FROM lots WHERE lot='LOT-20260116-003'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2026-01-16', 'Day', 'SW-6171-B', 200, 210, 27, TRUE, 'Material shortage', 'Material delayed from vendor'),
 ((SELECT id FROM lots WHERE lot='LOT-20260106-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-06', 'Day', 'SW-7688-D', 200, 166, 61, TRUE, 'Changeover delay', 'Changeover took longer than planned');
 
--- Shipping records
+-- ===========================
+-- PART 6: INSPECTION RECORDS
+-- ===========================
+-- Quality inspection data derived from production records.
+-- Each production line/lot combination gets 1-2 inspection records.
+-- This creates realistic defect scenarios for operations reporting.
+INSERT INTO inspection_records (
+  lot_id, production_line_id, inspection_date, inspection_time,
+  inspector, part_number, defect_id, defect_description,
+  severity, qty_checked, qty_defects, disposition, notes
+) VALUES
+-- Sample inspections across production records
+((SELECT id FROM lots WHERE lot='LOT-20251215-002'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2025-12-15', '14:30', 'Inspector A', 'SW-3572-B', (SELECT id FROM defects WHERE defect_code='SURFACE_SCRATCH'), 'Minor surface scratch', 'Low', 100, 5, 'Rework', 'Operator tool wear'),
+((SELECT id FROM lots WHERE lot='LOT-20251216-002'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2025-12-16', '08:00', 'Inspector B', 'SW-7236-A', (SELECT id FROM defects WHERE defect_code='DIMENSIONAL_OOS'), 'Dimension out of spec', 'Medium', 150, 12, 'Scrap', 'Tool offset drift'),
+((SELECT id FROM lots WHERE lot='LOT-20251216-003'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2025-12-16', '16:45', 'Inspector A', 'SW-1694-C', (SELECT id FROM defects WHERE defect_code='MATERIAL_DEFECT'), 'Material flaw', 'High', 80, 3, 'Hold', 'Supplier batch issue'),
+((SELECT id FROM lots WHERE lot='LOT-20251217-002'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2025-12-17', '22:00', 'Inspector C', 'SW-6145-D', (SELECT id FROM defects WHERE defect_code='ASSEMBLY_ERROR'), 'Component misaligned', 'Medium', 120, 8, 'Rework', 'Changeover setup error'),
+((SELECT id FROM lots WHERE lot='LOT-20251218-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2025-12-18', '10:30', 'Inspector B', 'SW-2541-A', (SELECT id FROM defects WHERE defect_code='PAINT_DEFECT'), 'Paint runs', 'Low', 90, 4, 'Rework', 'Humidity issue noticed'),
+((SELECT id FROM lots WHERE lot='LOT-20251218-003'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2025-12-18', '20:15', 'Inspector A', 'SW-1627-D', (SELECT id FROM defects WHERE defect_code='CORROSION'), 'Surface corrosion', 'Medium', 110, 7, 'Hold', 'Environment control failed'),
+((SELECT id FROM lots WHERE lot='LOT-20251219-002'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2025-12-19', '14:00', 'Inspector C', 'SW-2379-C', (SELECT id FROM defects WHERE defect_code='DENT'), 'Dent in product', 'Low', 100, 6, 'Rework', 'Handling damage'),
+((SELECT id FROM lots WHERE lot='LOT-20251220-002'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2025-12-20', '09:00', 'Inspector B', 'SW-8644-B', (SELECT id FROM defects WHERE defect_code='MISALIGNMENT'), 'Assembly misaligned', 'High', 95, 2, 'Hold', 'Fixture calibration needed'),
+((SELECT id FROM lots WHERE lot='LOT-20251221-002'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2025-12-21', '16:30', 'Inspector A', 'SW-6899-B', (SELECT id FROM defects WHERE defect_code='SURFACE_SCRATCH'), 'Scratch during handling', 'Low', 120, 3, 'Rework', 'Minor defect'),
+((SELECT id FROM lots WHERE lot='LOT-20251223-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2025-12-23', '11:00', 'Inspector C', 'SW-8027-A', (SELECT id FROM defects WHERE defect_code='PAINT_DEFECT'), 'Paint defect', 'Low', 100, 2, 'Rework', 'Temperature variance'),
+((SELECT id FROM lots WHERE lot='LOT-20251226-001'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2025-12-26', '13:45', 'Inspector B', 'SW-4788-C', (SELECT id FROM defects WHERE defect_code='DIMENSIONAL_OOS'), 'Size out of spec', 'Medium', 110, 9, 'Scrap', 'Calibration drift'),
+((SELECT id FROM lots WHERE lot='LOT-20251226-003'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2025-12-26', '19:00', 'Inspector A', 'SW-4178-C', (SELECT id FROM defects WHERE defect_code='MATERIAL_DEFECT'), 'Material inclusion', 'High', 140, 5, 'Hold', 'Supplier batch'),
+((SELECT id FROM lots WHERE lot='LOT-20251227-002'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2025-12-27', '07:30', 'Inspector C', 'SW-8768-C', (SELECT id FROM defects WHERE defect_code='ASSEMBLY_ERROR'), 'Part not seated', 'Medium', 100, 6, 'Rework', 'Setup error'),
+((SELECT id FROM lots WHERE lot='LOT-20251229-001'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2025-12-29', '15:00', 'Inspector B', 'SW-8882-C', (SELECT id FROM defects WHERE defect_code='CORROSION'), 'Rust spots', 'Medium', 95, 8, 'Hold', 'Storage condition issue'),
+((SELECT id FROM lots WHERE lot='LOT-20251230-003'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2025-12-30', '10:00', 'Inspector A', 'SW-5662-A', (SELECT id FROM defects WHERE defect_code='DENT'), 'Multiple dents', 'Low', 105, 7, 'Rework', 'Packaging issue'),
+((SELECT id FROM lots WHERE lot='LOT-20260103-002'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-03', '08:30', 'Inspector C', 'SW-1015-A', (SELECT id FROM defects WHERE defect_code='SURFACE_SCRATCH'), 'Scratch on finish', 'Low', 120, 4, 'Rework', 'Operator handling'),
+((SELECT id FROM lots WHERE lot='LOT-20260104-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-04', '14:15', 'Inspector B', 'SW-2708-C', (SELECT id FROM defects WHERE defect_code='DIMENSIONAL_OOS'), 'Out of spec width', 'High', 100, 11, 'Scrap', 'Tool offset error'),
+((SELECT id FROM lots WHERE lot='LOT-20260104-003'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-04', '22:45', 'Inspector A', 'SW-7961-C', (SELECT id FROM defects WHERE defect_code='ASSEMBLY_ERROR'), 'Fastener missing', 'High', 110, 3, 'Hold', 'Assembly line error'),
+((SELECT id FROM lots WHERE lot='LOT-20260105-002'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2026-01-05', '09:00', 'Inspector C', 'SW-2093-B', (SELECT id FROM defects WHERE defect_code='PAINT_DEFECT'), 'Paint thin spots', 'Medium', 95, 6, 'Rework', 'Application issue'),
+((SELECT id FROM lots WHERE lot='LOT-20260108-002'), (SELECT id FROM production_lines WHERE line='Line 2'), DATE '2026-01-08', '17:30', 'Inspector B', 'SW-4065-D', (SELECT id FROM defects WHERE defect_code='MATERIAL_DEFECT'), 'Internal void', 'High', 105, 2, 'Hold', 'Casting defect'),
+((SELECT id FROM lots WHERE lot='LOT-20260110-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-10', '11:00', 'Inspector A', 'SW-7826-C', (SELECT id FROM defects WHERE defect_code='CORROSION'), 'Surface oxidation', 'Low', 110, 5, 'Rework', 'Humidity storage'),
+((SELECT id FROM lots WHERE lot='LOT-20260111-002'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-11', '13:45', 'Inspector C', 'SW-6543-D', (SELECT id FROM defects WHERE defect_code='MISALIGNMENT'), 'Part position off', 'Medium', 100, 4, 'Rework', 'Fixture wear'),
+((SELECT id FROM lots WHERE lot='LOT-20260112-002'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-12', '20:00', 'Inspector B', 'SW-9211-D', (SELECT id FROM defects WHERE defect_code='DIMENSIONAL_OOS'), 'Thickness variation', 'Medium', 125, 10, 'Scrap', 'Die wear'),
+((SELECT id FROM lots WHERE lot='LOT-20260114-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-14', '10:30', 'Inspector A', 'SW-4546-A', (SELECT id FROM defects WHERE defect_code='SURFACE_SCRATCH'), 'Deep scratch', 'High', 105, 3, 'Hold', 'Tool damage'),
+((SELECT id FROM lots WHERE lot='LOT-20260117-001'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-17', '08:00', 'Inspector C', 'SW-3107-D', (SELECT id FROM defects WHERE defect_code='PAINT_DEFECT'), 'Paint sag', 'Medium', 100, 5, 'Rework', 'Spray angle'),
+((SELECT id FROM lots WHERE lot='LOT-20260118-002'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-18', '15:30', 'Inspector B', 'SW-5558-B', (SELECT id FROM defects WHERE defect_code='ASSEMBLY_ERROR'), 'Component gap', 'Low', 120, 7, 'Rework', 'Tolerance stack'),
+((SELECT id FROM lots WHERE lot='LOT-20260119-001'), (SELECT id FROM production_lines WHERE line='Line 3'), DATE '2026-01-19', '09:45', 'Inspector A', 'SW-1917-D', (SELECT id FROM defects WHERE defect_code='CORROSION'), 'Rust formation', 'High', 95, 4, 'Hold', 'Storage contamination'),
+((SELECT id FROM lots WHERE lot='LOT-20260121-001'), (SELECT id FROM production_lines WHERE line='Line 1'), DATE '2026-01-21', '16:00', 'Inspector C', 'SW-9915-B', (SELECT id FROM defects WHERE defect_code='DENT'), 'Impact damage', 'Low', 110, 6, 'Rework', 'Handling issue'),
+((SELECT id FROM lots WHERE lot='LOT-20260122-001'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-22', '11:30', 'Inspector B', 'SW-2818-C', (SELECT id FROM defects WHERE defect_code='DIMENSIONAL_OOS'), 'Hole off-center', 'High', 100, 8, 'Scrap', 'CNC offset error'),
+((SELECT id FROM lots WHERE lot='LOT-20260124-001'), (SELECT id FROM production_lines WHERE line='Line 4'), DATE '2026-01-24', '14:00', 'Inspector A', 'SW-4333-B', (SELECT id FROM defects WHERE defect_code='MATERIAL_DEFECT'), 'Surface contamination', 'Medium', 105, 3, 'Hold', 'Cleaning procedure');
+
+-- ===========================
+-- PART 7: SHIPPING RECORDS
+-- ===========================
+-- Shipping data derived from production lots.
+-- Not all lots ship; some may be on hold or pending.
 INSERT INTO shipping_records (
   lot_id, ship_date, sales_order_no, customer, destination_state,
   carrier, bol_no, tracking_pro, qty_shipped, ship_status, hold_reason, shipping_notes
@@ -286,10 +364,15 @@ INSERT INTO shipping_records (
 ((SELECT id FROM lots WHERE lot='LOT-20251216-001'), DATE '2026-01-03', 'SO-99509', 'Rivertown HVAC', 'MI', 'FedEx Freight', 'BOL-218102', NULL, 100, 'Partial', NULL, 'Signature required'),
 ((SELECT id FROM lots WHERE lot='LOT-20251227-002'), DATE '2025-12-28', 'SO-14870', 'Midwest Conveyors', 'WI', 'UPS Freight', 'BOL-AUTO-000009', NULL, 150, 'On Hold', 'Paperwork missing', NULL);
 
+-- ===========================
+-- COMMIT AND SUMMARY
+-- ===========================
 COMMIT;
 
--- Validation counts
+-- Verification queries (optional; run after seed to see what was inserted)
 -- SELECT COUNT(*) FROM lots;
 -- SELECT COUNT(*) FROM production_lines;
+-- SELECT COUNT(*) FROM defects;
 -- SELECT COUNT(*) FROM production_records;
+-- SELECT COUNT(*) FROM inspection_records;
 -- SELECT COUNT(*) FROM shipping_records;
