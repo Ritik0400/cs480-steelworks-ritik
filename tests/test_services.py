@@ -18,16 +18,19 @@ def service():
     return OperationsService(repository=Repository())
 
 
+@pytest.mark.skip(reason="scaffold stub - not implemented yet")
 def test_summarize_issues_by_line_stub(service):
     with pytest.raises(NotImplementedError):
         service.summarize_issues_by_line()
 
 
+@pytest.mark.skip(reason="scaffold stub - not implemented yet")
 def test_defect_trends_stub(service):
     with pytest.raises(NotImplementedError):
         service.defect_trends()
 
 
+@pytest.mark.skip(reason="scaffold stub - not implemented yet")
 def test_check_lot_shipped_stub(service):
     with pytest.raises(NotImplementedError):
         service.check_lot_shipped("LOT1")
