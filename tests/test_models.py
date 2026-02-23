@@ -11,7 +11,6 @@ import pytest
 from steelworks import models
 
 
-import pytest
 
 
 @pytest.mark.skip(reason="scaffold stub - no behavior to verify yet")
