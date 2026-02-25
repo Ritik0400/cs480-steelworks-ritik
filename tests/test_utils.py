@@ -1,4 +1,3 @@
-
 # The utility module is used for AC6 (lot ID normalization).  These two
 # tests exercise the normalization function and serve as the first real
 # business-logic tests in this develop branch.

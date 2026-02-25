@@ -11,8 +11,6 @@ import pytest
 from steelworks import models
 
 
-
-
 @pytest.mark.skip(reason="scaffold stub - no behavior to verify yet")
 def test_production_record_instantiation():
     # we only care that attributes can be set and read
