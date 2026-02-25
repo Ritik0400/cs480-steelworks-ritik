@@ -44,8 +44,9 @@ repos:
     # A single repo can define multiple hooks.
     #
     hooks:
-      - id: ruff
       - id: ruff-format
+      - id: ruff
+        args: ["--fix"]
 
     # Important:
     # ----------
